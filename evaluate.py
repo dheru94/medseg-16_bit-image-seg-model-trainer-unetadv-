@@ -42,6 +42,9 @@ def evaluate(net, dataloader, device, amp: bool) -> float:
             masks_true = masks_true.to(device, dtype=torch.float32)
 
             masks_pred = net(images)
+            # Unwrap deep supervision list — use the final (strongest) head
+            if isinstance(masks_pred, (list, tuple)):
+                masks_pred = masks_pred[-1]
 
             if net.n_classes == 1:
                 assert masks_true.min() >= 0 and masks_true.max() <= 1
@@ -99,6 +102,9 @@ def full_evaluate(net, dataloader, device, amp: bool, n_classes: int):
                 images = images.to(memory_format=torch.channels_last)
             masks_true = masks_true.to(device, dtype=torch.float32)
             masks_pred = net(images)
+            # Unwrap deep supervision list — use the final (strongest) head
+            if isinstance(masks_pred, (list, tuple)):
+                masks_pred = masks_pred[-1]
 
             # ── Binary ────────────────────────────────────────────────────────
             if n_classes == 1:

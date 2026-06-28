@@ -128,15 +128,60 @@ class SegmentationDataset(Dataset):
         return len(self.ids)
 
     @staticmethod
+    # def _normalize(img: np.ndarray) -> np.ndarray:
+    #     """Normalize image to [0, 1] based on bit depth."""
+    #     img = img.astype(np.float32)
+    #     max_val = img.max()
+    #     if max_val > 255:
+    #         return img / 65535.0   # 16-bit
+    #     elif max_val > 1:
+    #         return img / 255.0     # 8-bit
+    #     return img                 # already normalized
+    
+    # def _normalize(img: np.ndarray) -> np.ndarray:
+    #     img = img.astype(np.float32)
+
+    #     # Remove extreme outliers
+    #     p1, p99 = np.percentile(img, (1, 99))
+
+    #     img = np.clip(img, p1, p99)
+
+    #     # Normalize to [0,1]
+    #     img = (img - p1) / (p99 - p1 + 1e-8)
+
+    #     return img
     def _normalize(img: np.ndarray) -> np.ndarray:
-        """Normalize image to [0, 1] based on bit depth."""
         img = img.astype(np.float32)
-        max_val = img.max()
-        if max_val > 255:
-            return img / 65535.0   # 16-bit
-        elif max_val > 1:
-            return img / 255.0     # 8-bit
-        return img                 # already normalized
+
+        # Detect dead pixels (sensor artifacts common in 16-bit medical images)
+        dead_black = img <= 5
+        dead_white = img >= 65530
+        valid_mask = ~(dead_black | dead_white)
+
+        valid_pixels = img[valid_mask]
+
+        # FIX 1: fallback if no valid pixels exist (fully corrupted image)
+        if valid_pixels.size == 0:
+            img_norm = img / 65535.0   # plain normalization as fallback
+            return img_norm.clip(0.0, 1.0)
+
+        # Percentile normalization on valid pixels only
+        p1, p99 = np.percentile(valid_pixels, (1, 99))
+
+        img_norm = img.copy()
+
+        # Clip and normalize valid region to [0, 1]
+        img_norm[valid_mask] = np.clip(img_norm[valid_mask], p1, p99)
+        img_norm[valid_mask] = (img_norm[valid_mask] - p1) / (p99 - p1 + 1e-8)
+
+        # Dead pixels get fixed values
+        img_norm[dead_black] = 0.0
+        img_norm[dead_white] = 1.0
+
+        # FIX 2: return the normalized array, not the original
+        return img_norm
+
+
 
     @staticmethod
     def _preprocess_image(img: np.ndarray, scale: float,
@@ -246,7 +291,7 @@ class SegmentationDataset(Dataset):
         if self.augment:
             img, mask = self._augment(img, mask)
 
-return {
+        return {
             'image': torch.as_tensor(img.copy()).float().contiguous(),
             'mask':  torch.as_tensor(mask.copy()).float().contiguous(),
         }
